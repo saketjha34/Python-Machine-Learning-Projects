@@ -1,2 +1,4 @@
-# Machile-Learning-Linear-Regression-Projects
- end to end Machile-Learning-Linear-Regression-Projects
+# Machine-Learning-Projects
+ end to end Machine-Learning-Regression-Projects
+Machine-Learning-Classification-Projects
+Machine-Learning-Clustering-Projects
