@@ -1,26 +1,48 @@
 import seaborn as sns
-import matplotlib.pyplot  as plt
-from sklearn.linear_model import LogisticRegression
-from sklearn.linear_model import SGDClassifier
-from sklearn.ensemble import RandomForestClassifier
-from sklearn.tree import DecisionTreeClassifier
-from xgboost import XGBClassifier
-from lightgbm import LGBMClassifier
 from pathlib import Path
 import pandas as pd
-import numpy as np
-from sklearn.metrics import accuracy_score , f1_score , roc_auc_score
 from joblib import Parallel, delayed
 import optuna
+import joblib
+import os
+import pandas as pd
+import matplotlib.pyplot as plt
+import numpy as np
+from sklearn.preprocessing import LabelEncoder
+from sklearn.preprocessing import StandardScaler
+from sklearn.model_selection import train_test_split
+from sklearn.svm import SVC
+from xgboost import XGBClassifier
+from lightgbm import LGBMClassifier
+from catboost import CatBoostClassifier
 from sklearn.base import ClassifierMixin
-from typing import Type
+from sklearn.naive_bayes import  GaussianNB
+from sklearn.linear_model import SGDClassifier
+from sklearn.tree import DecisionTreeClassifier
+from sklearn.neural_network import MLPClassifier
+from sklearn.ensemble import RandomForestClassifier
+from sklearn.linear_model import LogisticRegression
+from sklearn.ensemble import GradientBoostingClassifier
+from sklearn.metrics import accuracy_score , f1_score , confusion_matrix ,classification_report
+
 
 
 models:dict[str, dict[str,float]] = {
+    
+    GaussianNB : {
+
+    },
+
     LogisticRegression : {
         'n_jobs' : -1
     },
 
+    SVC: {
+        'C' : 10,
+        'kernel': 'rbf',
+        
+    },
+    
     SGDClassifier : {
         'eta0' : 0.001 ,
         'max_iter': 2000 ,
@@ -33,6 +55,16 @@ models:dict[str, dict[str,float]] = {
         'max_features': 'sqrt' , 
         'max_leaf_nodes': 100 , 
         'min_samples_leaf': 4
+    },
+
+    GradientBoostingClassifier : {
+        'learning_rate': 0.001,
+        'n_estimators' : 400,
+
+    },
+
+    DecisionTreeClassifier:{
+
     },
 
     XGBClassifier : {
@@ -50,12 +82,22 @@ models:dict[str, dict[str,float]] = {
         'subsample': 0.5,
 
     },
-    DecisionTreeClassifier : {
-        'n_estimators': 500,
-        'num_leaves': 32 , 
-        'learning_rate': 0.01,
-        'subsample': 0.7,
+
+    MLPClassifier : {
+        'activation': 'identity',
+        'solver': 'adam',
+        'batch_size': 32,
+        'max_iter': 400,
+        'random_state': 42,
+        'beta_1': 0.5,
+
     },
+    CatBoostClassifier :{
+    'n_estimators': 900,
+    'verbose': 0 ,
+    'learning_rate': 0.005,
+    'l2_leaf_reg':1e-3,
+    }
 }
 
 
@@ -87,8 +129,8 @@ def evaluate_model(model,
     train_acc = accuracy_score(train_targets, train_preds)
     val_acc = accuracy_score(val_targets, val_preds)
 
-    train_f1 = f1_score(train_targets, train_preds)
-    val_f1 = f1_score(val_targets, val_preds)
+    train_f1 = f1_score(train_targets, train_preds , average='macro')
+    val_f1 = f1_score(val_targets, val_preds , average='macro')
 
     return (train_acc, val_acc, train_f1, val_f1)
 
@@ -125,6 +167,36 @@ def try_models(model_dict: dict[str, dict[str,float]],
     return df
 
 
+def evalmodel(model,
+              X_train:np.array , 
+              train_targets:np.array ,
+              X_val:np.array,
+              val_targets:np.array,
+              **params) -> dict[str , float]:
+    """
+    Trains a given model with training data and evaluates its performance on both training and validation data.
+
+    Parameters:
+    model (class): A machine learning model class (e.g., sklearn.ensemble.RandomForestClassifier).
+    X_train (np.array): Feature matrix for training data.
+    train_targets (np.array): Target values for training data.
+    X_val (np.array): Feature matrix for validation data.
+    val_targets (np.array): Target values for validation data.
+    **params: Additional parameters to initialize the model.
+
+    Returns:
+    dict[str, float]: A dictionary containing the accuracy and F1 score for both training and validation data.
+    """
+    model = model(**params).fit(X_train,train_targets)
+    train_preds = model.predict(X_train)
+    val_preds = model.predict(X_val)
+    return {
+        'Train Accuracy:': accuracy_score(train_preds,train_targets ),
+        'Val Accuracy:' :  accuracy_score(val_preds,val_targets ),
+        'Train F1 Score:' :  f1_score(val_preds,val_targets, average='macro'),
+        'Val F1 Score:' :  f1_score(val_preds,val_targets , average='macro'),
+    }
+
 def submit_prediction(model,
                       submission_df: pd.DataFrame, 
                       X_train: np.ndarray, 
@@ -156,9 +228,10 @@ def submit_prediction(model,
     params['model'] = model
     return params
 
-def plot_model_importance(model: Type[ClassifierMixin], 
-                          X_train: pd.DataFrame,
-                          train_targets: pd.Series,
+def plot_model_importance(model: type[ClassifierMixin], 
+                          X_train: pd.DataFrame, 
+                          train_targets: pd.Series ,
+                          get_importance_df : bool = False,
                           **params) -> pd.DataFrame:
     """
     Trains a model and plots the feature importances.
@@ -172,19 +245,36 @@ def plot_model_importance(model: Type[ClassifierMixin],
     Returns:
     - pd.DataFrame: A dataframe containing feature names and their importance scores.
     """
+    # Train the model
     classifier = model(**params)
     classifier.fit(X_train, train_targets)
+    
+    # Create a DataFrame with feature importances
     importance_df = pd.DataFrame({
         'feature': X_train.columns,
         'importance': classifier.feature_importances_
     }).sort_values('importance', ascending=False)
 
-    plt.figure(figsize=(10, 30))
-    plt.title('Feature Importance of model')
-    sns.barplot(data=importance_df, x='importance', y='feature', color='blue')
-    plt.show()
+    # Plot the feature importances
+    plt.figure(figsize=(12, 10))
+    sns.set(style="whitegrid")
+    barplot = sns.barplot(data=importance_df, x='importance', y='feature', palette='viridis')
     
-    return importance_df
+    # Customize the plot appearance
+    barplot.set_title('Feature Importance of Model', fontsize=16, weight='bold')
+    barplot.set_xlabel('Importance', fontsize=14)
+    barplot.set_ylabel('Feature', fontsize=14)
+    barplot.tick_params(axis='x', rotation=90, labelsize=12)
+    barplot.tick_params(axis='y', labelsize=12)
+    
+    # Add value labels on the bars
+    for index, value in enumerate(importance_df['importance']):
+        barplot.text(value, index, f'{value:.2f}', color='black', ha="left", va="center", fontsize=12)
+    
+    plt.tight_layout()
+    plt.show()
+    if get_importance_df == True:
+        return importance_df
 
 
 def try_models(model_dict: dict[str, dict[str,float]],
@@ -233,3 +323,138 @@ def try_models(model_dict: dict[str, dict[str,float]],
 
     })
     return df
+
+def plot_confusion_matrix(model: type[ClassifierMixin], 
+                          X_train: np.array, 
+                          train_targets: np.array,
+                          X_val: np.array = None, 
+                          val_targets: np.array = None, 
+                          labels: list = None,
+                          **params) ->None :
+    """
+    Trains a model and plots the confusion matrices for both training and validation datasets.
+
+    Parameters:
+    - model (Type[ClassifierMixin]): The classifier to be used for training.
+    - X_train (np.array): The training data features.
+    - train_targets (np.array): The training data targets.
+    - X_val (np.array, optional): The validation data features.
+    - val_targets (np.array, optional): The validation data targets.
+    - labels (list, optional): The list of labels to be used in the confusion matrix heatmap.
+    - **params: Additional parameters to be passed to the model.
+    """
+    classifier = model(**params).fit(X_train, train_targets)
+    train_preds = classifier.predict(X_train)
+    train_cm = confusion_matrix(train_targets, train_preds)
+    
+    if X_val is not None and val_targets is not None:
+        fig, axes = plt.subplots(1, 2, figsize=(16, 6))
+    else:
+        fig, axes = plt.subplots(1, 1, figsize=(8, 6))
+        axes = [axes]
+    
+    sns.heatmap(train_cm, annot=True, fmt='d', ax=axes[0], cmap='Blues',
+                xticklabels=labels if labels is not None else 'auto', 
+                yticklabels=labels if labels is not None else 'auto')
+    axes[0].set_title('Confusion Matrix: Training Dataset')
+    axes[0].set_xlabel('Predicted Labels')
+    axes[0].set_ylabel('True Labels')
+
+    if X_val is not None and val_targets is not None:
+        val_preds = classifier.predict(X_val)
+        val_cm = confusion_matrix(val_targets, val_preds)
+        
+        sns.heatmap(val_cm, annot=True, fmt='d', ax=axes[1], cmap='rocket',
+                    xticklabels=labels if labels is not None else 'auto', 
+                    yticklabels=labels if labels is not None else 'auto')
+        axes[1].set_title('Confusion Matrix: Validation Dataset')
+        axes[1].set_xlabel('Predicted Labels')
+        axes[1].set_ylabel('True Labels')
+    
+    plt.tight_layout()
+    plt.show()
+
+def plot_classification_report(model: type[ClassifierMixin], 
+                               X_train: np.array, 
+                               train_targets: np.array, 
+                               X_val: np.array = None, 
+                               val_targets: np.array = None, 
+                               labels: list = None, 
+                               **params) -> None:
+    """
+    Trains a model and prints the classification reports for both training and validation datasets.
+
+    Parameters:
+    - model (Type[ClassifierMixin]): The classifier to be used for training.
+    - X_train (np.array): The training data features.
+    - train_targets (np.array): The training data targets.
+    - X_val (np.array, optional): The validation data features.
+    - val_targets (np.array, optional): The validation data targets.
+    - labels (list, optional): The list of labels to be used in the classification report.
+    - **params: Additional parameters to be passed to the model.
+    """
+    classifier = model(**params).fit(X_train, train_targets)
+    train_preds = classifier.predict(X_train)
+    train_report = classification_report(train_targets, train_preds, target_names=labels)
+    
+    print('-----------------------------------------------------------')
+    print('------------------Training Dataset Report------------------')
+    print(train_report)
+    
+    if X_val is not None and val_targets is not None:
+        val_preds = classifier.predict(X_val)
+        val_report = classification_report(val_targets, val_preds, target_names=labels)
+        
+        print('-----------------------------------------------------------')
+        print('----------------Validation Dataset Report------------------')
+        print(val_report)
+
+
+
+filepath = '../saved models/LGBModel.joblib'
+def save_model(model : type[ClassifierMixin], 
+               model_params : dict[str,float], 
+               filepath:str) -> None:
+    """
+    Save a model and its parameters to a specified file path using joblib.
+
+    Parameters:
+    model (type[ClassifierMixin]) : The model to be saved.
+    model_params (dict[str,float]) : The parameters used to create the model.
+    filepath (str): The file path where the model and its parameters will be saved.
+    
+    Returns:
+    None
+    """
+    # Create the directory if it doesn't exist
+    os.makedirs(os.path.dirname(filepath), exist_ok=True)
+    
+    # Save the model and parameters to a dictionary
+    model_data = {
+        'model': model,
+        'params': model_params
+    }
+    
+    # Save the dictionary to the specified file path
+    joblib.dump(model_data, filepath)
+    print(f"Model and parameters saved to {filepath}")
+
+def load_model(filepath:str) -> tuple[type[ClassifierMixin],dict[str,float]]:
+    """
+    Load a model and its parameters from a specified file path using joblib.
+
+    Parameters:
+    filepath (str): The file path from where the model and its parameters will be loaded.
+    
+    Returns:
+    model (type[ClassifierMixin]) : The loaded model.
+    model_params (dict[str,float]): The parameters used to create the model.
+    """
+    # Load the model and parameters from the specified file path
+    model_data = joblib.load(filepath)
+    
+    model = model_data['model']
+    model_params = model_data['params']
+    
+    print(f"Model and parameters loaded from {filepath}")
+    return model, model_params
