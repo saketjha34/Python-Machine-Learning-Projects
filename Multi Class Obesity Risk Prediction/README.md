@@ -151,31 +151,58 @@ python utils/nueral_network_models.py
 |    XGBoost      |   90.6%  |
 | Neural Network  |   87.5%  |
 
+The `files/Model Benchmarks/` directory contains detailed performance metrics for each model:
 
+Example of accessing benchmarks from the command line:
+```bash
+cd files/Model Benchmarks/LGBM
+cd files/Model Benchmarks/XGB
+cd files/Model Benchmarks/NeuralNetwork
+```
+To run the benchmarks of any particular models run:
+```python
+from utils.basic_utils import evalmodel , plot_model_importance , plot_confusion_matrix , plot_classification_report , save_model
+from xgboost import XGBClassifier
+
+def main():
+    evalmodel(XGBClassifier , X_train , train_targets , X_val , val_targets)
+    plot_model_importance(XGBClassifier, X_train, train_targets, X_val ,val_targets ,**xgb_params)
+    plot_classification_report(XGBClassifier , X_train ,train_targets , X_val , val_targets ,labels=class_names,**xgb_params)
+    plot_confusion_matrix(XGBClassifier , X_train,train_targets, X_val , val_targets, labels=class_names,**xgb_param)
+
+if __name__ == "__main__":
+    main()
+
+```
 
 ## Deployment
 
-The trained models are saved as `.pth` files in the `pytorch saved models` directory. These files can be used for further deployment purposes. You can load the models in PyTorch using the following code:
+The trained models are saved as `.joblib` files in the `saved models` directory. These files can be used for further deployment purposes. You can load the models using the following code:
 
 ```python
-import torch
-from utils.models import AlexNet
-from utils.models import ResNet18
+from utils.basic_utils import load_model
 
-# Load AlexNet model
-alexnet = AlexNet(in_channels = 1 , num_classes = 2)
-alexnet.load_state_dict(torch.load('pytorch saved models/BoneXRayFractureClassificationAlexNet.pth'))
+#load LGBM Model
+filepath = '..\\saved models\\LGBModel.joblib'
+loaded_model, loaded_model_params = load_model(filepath)
 
-# Load ResNet18 model
-resnet18 = ResNet18(in_channels = 1 , num_classes = 2)
-resnet18.load_state_dict(torch.load('pytorch saved models/BoneXRayFractureClassificationResNet18pth'))
+filepath = '..\\saved models\\XGBModel.joblib'
+loaded_model, loaded_model_params = load_model(filepath)
 ```
 
 ## References
 
-- Krizhevsky, A., Sutskever, I., & Hinton, G. E. (2012). ImageNet Classification with Deep Convolutional Neural Networks. *Advances in Neural Information Processing Systems*, 25, 1097-1105. [PDF](https://papers.nips.cc/paper/4824-imagenet-classification-with-deep-convolutional-neural-networks.pdf)
-- He, K., Zhang, X., Ren, S., & Sun, J. (2015). Deep Residual Learning for Image Recognition. *arXiv preprint arXiv:1512.03385*. [PDF](https://arxiv.org/abs/1512.03385)
-- Kaggle Dataset : [link](https://www.kaggle.com/datasets/bmadushanirodrigo/fracture-multi-region-x-ray-data)
+### Neural Networks
+- **[Deep Learning](https://www.deeplearningbook.org/)**: Comprehensive book covering the fundamentals of neural networks, including feedforward, convolutional, and recurrent architectures.
+
+### XGBoost
+- **[XGBoost: A Scalable Tree Boosting System](https://arxiv.org/abs/1603.02754)**: Paper by Chen and Guestrin detailing the design, implementation, and applications of XGBoost.
+
+### LightGBM
+- **[LightGBM: A Highly Efficient Gradient Boosting Decision Tree](https://www.microsoft.com/en-us/research/publication/lightgbm-a-highly-efficient-gradient-boosting-decision-tree/)**: Paper introducing LightGBM, focusing on its efficiency and scalability.
+
+### SVM (Support Vector Machine)
+- **[Support Vector Machines: Concepts and Applications](https://www.csie.ntu.edu.tw/~cjlin/papers/guide/guide.pdf)**: Guide by Hsu, Chang, and Lin providing an overview of SVM concepts, implementation, and applications.
 
 ## License
 
